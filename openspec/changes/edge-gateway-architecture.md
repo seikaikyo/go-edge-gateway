@@ -1,7 +1,7 @@
 ---
 title: Edge Gateway Plugin Architecture
 type: feature
-status: in-progress
+status: completed
 created: 2026-04-01
 ---
 
@@ -295,12 +295,12 @@ go build -tags "modbus,mqtt" ./cmd/edge-gateway/
 
 ## Checklist
 
-- [ ] Phase 1: Core + Plugin interface
-- [ ] Phase 2: Modbus TCP plugin
-- [ ] Phase 3: SECS/GEM plugin
-- [ ] Phase 4: MQTT device plugin
-- [ ] Phase 5: MQTT uplink + integration test
-- [ ] README with architecture diagram
-- [ ] Dockerfile
-- [ ] Example edge-gateway.yaml
+- [x] Phase 1: Core + Plugin interface
+- [x] Phase 2: Modbus TCP plugin
+- [x] Phase 3: SECS/GEM plugin
+- [x] Phase 4: MQTT device plugin
+- [x] Phase 5: MQTT uplink + integration test
+- [x] README with architecture diagram
+- [x] Dockerfile
+- [x] Example edge-gateway.yaml
 - [ ] CI: GitHub Actions (build + test)

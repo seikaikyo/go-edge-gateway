@@ -1,0 +1,46 @@
+gateway:
+  name: "demo-gateway"
+  log_level: info
+  health_port: 8080
+
+uplink:
+  type: stdout
+
+plugins:
+  secsgem:
+    enabled: false
+    devices:
+      - name: "etcher-01"
+        host: 192.168.1.100
+        port: 5000
+        mode: passive
+        device_id: 1
+
+  modbus:
+    enabled: true
+    devices:
+      - name: "temp-sensor-rack"
+        host: 192.168.1.200
+        port: 502
+        unit_id: 1
+        poll_interval: 1s
+        registers:
+          - name: "temperature"
+            address: 0
+            type: holding
+            count: 1
+            scale: 0.1
+            unit: "celsius"
+          - name: "humidity"
+            address: 1
+            type: holding
+            count: 1
+            scale: 0.1
+            unit: "%"
+
+  mqtt:
+    enabled: false
+    broker: "tcp://192.168.1.50:1883"
+    subscriptions:
+      - topic: "machines/+/status"
+        device_pattern: "machines/{device}/status"
