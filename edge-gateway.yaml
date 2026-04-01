@@ -10,7 +10,9 @@ coordinator:
   heartbeat_interval: "30s"
 
 uplink:
-  type: stdout
+  type: coordinator
+  batch_interval: "5s"
+  max_batch_size: 100
 
 plugins:
   secsgem:

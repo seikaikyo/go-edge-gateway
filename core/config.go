@@ -32,9 +32,11 @@ type GatewayConfig struct {
 
 // UplinkConfig defines where plugin messages are sent.
 type UplinkConfig struct {
-	Type string     `yaml:"type"` // stdout, mqtt, file
-	MQTT MQTTUplink `yaml:"mqtt"`
-	File FileUplink `yaml:"file"`
+	Type          string     `yaml:"type"` // stdout, mqtt, file, coordinator
+	MQTT          MQTTUplink `yaml:"mqtt"`
+	File          FileUplink `yaml:"file"`
+	BatchInterval string     `yaml:"batch_interval"` // for coordinator type, e.g. "5s"
+	MaxBatchSize  int        `yaml:"max_batch_size"`  // for coordinator type
 }
 
 // MQTTUplink configures the MQTT uplink target.

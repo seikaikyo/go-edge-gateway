@@ -24,6 +24,8 @@ func NewUplink(cfg *Config, logger *slog.Logger) Uplink {
 		return newFileUplink(cfg.Uplink.File.Path, logger)
 	case "mqtt":
 		return newMQTTUplink(cfg.Uplink.MQTT, logger)
+	case "coordinator":
+		return newCoordinatorUplink(cfg, logger)
 	default:
 		return &stdoutUplink{logger: logger}
 	}
