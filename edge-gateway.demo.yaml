@@ -3,6 +3,12 @@ gateway:
   log_level: info
   health_port: 8080
 
+coordinator:
+  url: "https://dashai-go.onrender.com"
+  node_id: "edge-gw-demo-01"
+  location: "Demo Environment"
+  heartbeat_interval: "30s"
+
 uplink:
   type: stdout
 

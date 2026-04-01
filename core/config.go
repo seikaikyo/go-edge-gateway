@@ -9,9 +9,18 @@ import (
 
 // Config is the top-level gateway configuration.
 type Config struct {
-	Gateway GatewayConfig            `yaml:"gateway"`
-	Uplink  UplinkConfig             `yaml:"uplink"`
-	Plugins map[string]PluginConfig  `yaml:"plugins"`
+	Gateway     GatewayConfig            `yaml:"gateway"`
+	Coordinator CoordinatorConfig        `yaml:"coordinator"`
+	Uplink      UplinkConfig             `yaml:"uplink"`
+	Plugins     map[string]PluginConfig  `yaml:"plugins"`
+}
+
+// CoordinatorConfig defines cloud coordinator connection settings.
+type CoordinatorConfig struct {
+	URL               string `yaml:"url"`
+	NodeID            string `yaml:"node_id"`
+	Location          string `yaml:"location"`
+	HeartbeatInterval string `yaml:"heartbeat_interval"` // e.g. "30s"
 }
 
 // GatewayConfig holds gateway identity and operational settings.

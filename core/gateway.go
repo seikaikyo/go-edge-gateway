@@ -54,7 +54,7 @@ func (g *Gateway) Init() error {
 	return nil
 }
 
-// Run starts all plugins and the uplink consumer. Blocks until ctx is cancelled.
+// Run starts all plugins, the uplink consumer, and the coordinator. Blocks until ctx is cancelled.
 func (g *Gateway) Run(ctx context.Context) error {
 	// Start uplink consumer.
 	uplinkDone := make(chan struct{})
@@ -62,6 +62,12 @@ func (g *Gateway) Run(ctx context.Context) error {
 		defer close(uplinkDone)
 		g.consumeUplink(ctx)
 	}()
+
+	// Start coordinator (if configured).
+	coord := NewCoordinator(g.cfg.Coordinator, g, g.logger)
+	if coord != nil {
+		go coord.Run(ctx)
+	}
 
 	// Start all plugins concurrently.
 	var wg sync.WaitGroup
