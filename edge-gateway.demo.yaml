@@ -1,0 +1,17 @@
+gateway:
+  name: "edge-gw-demo-01"
+  log_level: info
+  health_port: 8080
+
+uplink:
+  type: stdout
+
+plugins:
+  secsgem:
+    enabled: false
+
+  modbus:
+    enabled: false
+
+  mqtt:
+    enabled: false

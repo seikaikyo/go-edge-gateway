@@ -1,24 +1,24 @@
 # Multi-stage build for edge-gateway
 #
-# NOTE: go.mod uses "replace" to reference ../go-factory-io locally.
-# For Docker build, copy both repos into the build context:
-#
-#   docker build -f go-edge-gateway/Dockerfile \
-#     --build-context factory=go-factory-io \
-#     -t edge-gateway go-edge-gateway
-#
-# Or publish go-factory-io as a Go module and remove the replace directive.
+# go-factory-io module path is github.com/dashfactory/go-factory-io
+# but the repo lives at github.com/seikaikyo/go-factory-io.
+# We use git insteadOf to redirect the module fetch, and strip
+# the local replace directive so Go fetches from GitHub.
 
 FROM golang:1.26-alpine AS builder
 
+RUN apk --no-cache add git
+RUN git config --global url."https://github.com/seikaikyo/go-factory-io".insteadOf "https://github.com/dashfactory/go-factory-io"
+
+ENV GONOSUMCHECK=github.com/dashfactory/go-factory-io
+ENV GOFLAGS=-mod=mod
+
 WORKDIR /src
-
-# Copy go-factory-io dependency first (from build context or parent)
-COPY --from=factory . /go-factory-io
-
-WORKDIR /src/edge-gateway
 COPY go.mod go.sum ./
-RUN go mod download
+
+# Remove local replace directive for Docker build
+RUN sed -i '/^replace.*go-factory-io/d' go.mod
+RUN go mod tidy && go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /edge-gateway ./cmd/edge-gateway/
@@ -28,6 +28,7 @@ FROM alpine:3.21
 
 RUN apk --no-cache add ca-certificates tzdata
 COPY --from=builder /edge-gateway /usr/local/bin/edge-gateway
+COPY edge-gateway.demo.yaml /etc/edge-gateway/config.yaml
 
 EXPOSE 8080
 
