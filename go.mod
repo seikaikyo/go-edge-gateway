@@ -5,7 +5,9 @@ go 1.26.1
 require (
 	github.com/dashfactory/go-factory-io v1.0.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/goburrow/modbus v0.1.0
+	github.com/seikaikyo/go-common v0.2.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -17,3 +19,5 @@ require (
 )
 
 replace github.com/dashfactory/go-factory-io => ../go-factory-io
+
+replace github.com/seikaikyo/go-common => ../go-common

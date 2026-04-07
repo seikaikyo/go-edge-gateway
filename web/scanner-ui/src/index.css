@@ -1,0 +1,53 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: #0f1117;
+  --color-foreground: #e2e8f0;
+  --color-card: #1a1d27;
+  --color-card-foreground: #e2e8f0;
+  --color-popover: #1a1d27;
+  --color-popover-foreground: #e2e8f0;
+  --color-primary: #3b82f6;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #2a2d37;
+  --color-secondary-foreground: #e2e8f0;
+  --color-muted: #1e2130;
+  --color-muted-foreground: #94a3b8;
+  --color-accent: #2a2d37;
+  --color-accent-foreground: #e2e8f0;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #2a2d37;
+  --color-input: #2a2d37;
+  --color-ring: #3b82f6;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+  --radius: 0.5rem;
+
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', ui-monospace, monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+}

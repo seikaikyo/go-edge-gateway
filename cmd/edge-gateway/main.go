@@ -61,11 +61,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Start health server.
-	hs := core.NewHealthServer(gw, cfg.Gateway.HealthPort, logger)
+	// Start API server (health + scan API + embedded UI).
+	api := core.NewAPIServer(gw, cfg.Gateway.HealthPort, logger)
 	go func() {
-		if err := hs.ListenAndServe(); err != nil {
-			logger.Debug("health server stopped", "error", err)
+		if err := api.ListenAndServe(); err != nil {
+			logger.Debug("api server stopped", "error", err)
 		}
 	}()
 
@@ -78,6 +78,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	hs.Close()
+	api.Close()
 	logger.Info("edge-gateway stopped")
 }
