@@ -1,2 +1,6 @@
 edge-gateway
 *.exe
+node_modules/
+.claude/
+entities.json
+mempalace.yaml
