@@ -1,6 +1,7 @@
 module github.com/seikaikyo/go-edge-gateway
 
 go 1.26.1
+toolchain go1.26.7
 
 require (
 	github.com/dashfactory/go-factory-io v1.0.0
