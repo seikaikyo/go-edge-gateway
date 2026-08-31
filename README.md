@@ -64,14 +64,43 @@ device events. Configure via the `coordinator` block in YAML.
 # Build
 go build -o edge-gateway ./cmd/edge-gateway/
 
-# Run with config
+# The scan API needs a token; without one /api refuses every request.
+export EDGE_GATEWAY_API_TOKEN=$(openssl rand -hex 24)
+
+# Run with config (binds 127.0.0.1 unless --listen says otherwise)
 ./edge-gateway --config edge-gateway.yaml
 
-# Check health (also serves the scanner UI on this port)
+# Check health (unauthenticated; also serves the scanner UI on this port)
 curl http://localhost:8080/health
+
+# Call the scan API
+curl -H "Authorization: Bearer $EDGE_GATEWAY_API_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"mode":"tcp","host":"192.168.1.200","port":502}' \
+     http://localhost:8080/api/scan/quick
 ```
 
 Requires Go 1.26+.
+
+## Scan API Security
+
+The scan API drives outbound Modbus connections, so it is closed by default:
+
+| Control | Default | Where to change |
+|---|---|---|
+| Bind address | `127.0.0.1` | `--listen`, `EDGE_GATEWAY_LISTEN`, or `api.listen` |
+| `/api/*` authentication | Bearer token, required | `EDGE_GATEWAY_API_TOKEN` (name via `api.token_env`) |
+| Scan target range | Loopback plus RFC1918 | `scan.allowed_targets` (CIDR list) |
+| RTU `serial_port` | Devices the host enumerates | not configurable |
+| Browser origins | Same-origin only | `api.allowed_origins` |
+
+Notes:
+
+- No token means `/api/*` answers 503. It never runs unauthenticated.
+- Link-local (`169.254.0.0/16`, `fe80::/10`) is refused whatever `allowed_targets` says.
+- State-changing requests must send `Content-Type: application/json`.
+- Device connection errors come back as a fixed message; the cause is in the log
+  only, so the API cannot be used to map an internal network.
 
 ## Config Example
 

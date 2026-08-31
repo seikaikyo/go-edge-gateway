@@ -1,10 +1,17 @@
 // Package scan provides on-demand Modbus device scanning via HTTP API.
 // Core scan logic lives in go-common/modbus; this package adds job management,
 // HTTP handlers, and an embedded React UI.
+//
+// Every target reaching the Modbus layer is checked against a Policy first:
+// TCP hosts against a CIDR allow list, RTU serial ports against the devices the
+// host actually exposes. Failures are reported to callers as generic messages
+// so the API cannot be used as an internal port-scanning oracle; the underlying
+// error is written to the log instead.
 package scan
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -16,14 +23,24 @@ import (
 	"github.com/seikaikyo/go-common/response"
 )
 
+// Client-facing messages. They stay identical across failure causes on purpose:
+// "connection refused" and "timed out" must not be distinguishable.
+const (
+	msgConnectFailed = "device connection failed"
+	msgReadFailed    = "device read failed"
+	msgScanFailed    = "scan failed"
+	msgTargetDenied  = "scan target is not permitted"
+	msgSerialDenied  = "serial_port must be one of the available serial devices"
+)
+
 // Job represents an async scan job.
 type Job struct {
-	ID        string            `json:"job_id"`
-	Status    string            `json:"status"` // running, completed, failed
+	ID        string             `json:"job_id"`
+	Status    string             `json:"status"` // running, completed, failed
 	Request   modbus.ScanRequest `json:"request"`
 	Result    *modbus.ScanResult `json:"result,omitempty"`
-	Error     string            `json:"error,omitempty"`
-	CreatedAt time.Time         `json:"created_at"`
+	Error     string             `json:"error,omitempty"`
+	CreatedAt time.Time          `json:"created_at"`
 }
 
 type jobStore struct {
@@ -32,7 +49,9 @@ type jobStore struct {
 	seq  int
 }
 
-var store = &jobStore{jobs: make(map[string]*Job)}
+func newJobStore() *jobStore {
+	return &jobStore{jobs: make(map[string]*Job)}
+}
 
 func (s *jobStore) create(req modbus.ScanRequest) *Job {
 	s.mu.Lock()
@@ -49,33 +68,70 @@ func (s *jobStore) create(req modbus.ScanRequest) *Job {
 	return job
 }
 
-func (s *jobStore) get(id string) *Job {
+// get returns a copy of the job. Readers never hold the live pointer, because
+// the scan goroutine keeps writing to it after the handler has returned.
+func (s *jobStore) get(id string) (Job, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.jobs[id]
+	j, ok := s.jobs[id]
+	if !ok {
+		return Job{}, false
+	}
+	return *j, true
 }
 
-func (s *jobStore) list() []*Job {
+func (s *jobStore) list() []Job {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	jobs := make([]*Job, 0, len(s.jobs))
+	jobs := make([]Job, 0, len(s.jobs))
 	for _, j := range s.jobs {
-		jobs = append(jobs, j)
+		jobs = append(jobs, *j)
 	}
 	return jobs
 }
 
-// Router returns the chi router for scan API endpoints.
-func Router() chi.Router {
+// finish records the outcome of a scan under the store lock.
+func (s *jobStore) finish(id, status, errMsg string, result *modbus.ScanResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jobs[id]
+	if !ok {
+		return
+	}
+	j.Status = status
+	j.Error = errMsg
+	j.Result = result
+}
+
+// api holds the handler dependencies: the job store and the target policy.
+type api struct {
+	store  *jobStore
+	policy *Policy
+}
+
+// Router returns the chi router for scan API endpoints. The policy governs
+// which devices the endpoints may reach; a nil policy falls back to the
+// default allow list.
+func Router(policy *Policy) chi.Router {
+	if policy == nil {
+		p, err := NewPolicy(nil)
+		if err != nil {
+			panic(err)
+		}
+		policy = p
+	}
+
+	a := &api{store: newJobStore(), policy: policy}
+
 	r := chi.NewRouter()
 
-	r.Post("/scan", handleScan)
-	r.Post("/scan/quick", handleQuickScan)
-	r.Post("/read", handleRead)
-	r.Get("/jobs", handleListJobs)
-	r.Get("/jobs/{id}", handleGetJob)
-	r.Get("/serial/ports", handleListSerialPorts)
-	r.Post("/scan/jobs/{id}/to-config", handleToConfig)
+	r.Post("/scan", a.handleScan)
+	r.Post("/scan/quick", a.handleQuickScan)
+	r.Post("/read", a.handleRead)
+	r.Get("/jobs", a.handleListJobs)
+	r.Get("/jobs/{id}", a.handleGetJob)
+	r.Get("/serial/ports", a.handleListSerialPorts)
+	r.Post("/scan/jobs/{id}/to-config", a.handleToConfig)
 
 	return r
 }
@@ -94,7 +150,31 @@ func validateScanRequest(req *modbus.ScanRequest) string {
 	return ""
 }
 
-func handleScan(w http.ResponseWriter, r *http.Request) {
+// checkTarget applies the policy and writes a generic denial response. It
+// returns false when the request must not proceed.
+func (a *api) checkTarget(w http.ResponseWriter, r *http.Request, req *modbus.ScanRequest) bool {
+	err := a.policy.CheckRequest(req)
+	if err == nil {
+		return true
+	}
+
+	slog.Warn("scan target rejected",
+		"path", r.URL.Path,
+		"mode", req.Mode,
+		"host", req.Host,
+		"serial", req.SerialPort,
+		"reason", err,
+	)
+
+	if errors.Is(err, ErrSerialNotAllowed) {
+		response.Err(w, http.StatusBadRequest, msgSerialDenied)
+		return false
+	}
+	response.Err(w, http.StatusForbidden, msgTargetDenied)
+	return false
+}
+
+func (a *api) handleScan(w http.ResponseWriter, r *http.Request) {
 	var req modbus.ScanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Err(w, http.StatusBadRequest, "invalid request body")
@@ -105,39 +185,23 @@ func handleScan(w http.ResponseWriter, r *http.Request) {
 		response.Err(w, http.StatusBadRequest, msg)
 		return
 	}
+	if !a.checkTarget(w, r, &req) {
+		return
+	}
 
-	job := store.create(req)
+	job := a.store.create(req)
+	id, status := job.ID, job.Status
 
-	go func() {
-		slog.Info("scan started", "job_id", job.ID, "mode", req.Mode, "host", req.Host, "serial", req.SerialPort)
-		result, err := modbus.Scan(req)
-
-		store.mu.Lock()
-		defer store.mu.Unlock()
-
-		if err != nil {
-			job.Status = "failed"
-			job.Error = err.Error()
-			slog.Error("scan failed", "job_id", job.ID, "error", err)
-		} else {
-			job.Status = "completed"
-			job.Result = result
-			slog.Info("scan completed", "job_id", job.ID,
-				"responsive", result.Summary.Responsive,
-				"dynamic", result.Summary.Dynamic,
-				"duration_ms", result.DurationMs,
-			)
-		}
-	}()
+	go a.runScan(id, req, "scan")
 
 	response.OK(w, map[string]any{
-		"job_id":  job.ID,
-		"status":  job.Status,
-		"message": "scan started, poll GET /api/jobs/" + job.ID + " for results",
+		"job_id":  id,
+		"status":  status,
+		"message": "scan started, poll GET /api/jobs/" + id + " for results",
 	})
 }
 
-func handleQuickScan(w http.ResponseWriter, r *http.Request) {
+func (a *api) handleQuickScan(w http.ResponseWriter, r *http.Request) {
 	var req modbus.ScanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Err(w, http.StatusBadRequest, "invalid request body")
@@ -146,6 +210,9 @@ func handleQuickScan(w http.ResponseWriter, r *http.Request) {
 
 	if msg := validateScanRequest(&req); msg != "" {
 		response.Err(w, http.StatusBadRequest, msg)
+		return
+	}
+	if !a.checkTarget(w, r, &req) {
 		return
 	}
 	req.ScanTypes = []string{"holding"}
@@ -154,32 +221,39 @@ func handleQuickScan(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Samples = 1
 
-	job := store.create(req)
+	job := a.store.create(req)
+	id, status := job.ID, job.Status
 
-	go func() {
-		slog.Info("quick scan started", "job_id", job.ID, "host", req.Host)
-		result, err := modbus.Scan(req)
-
-		store.mu.Lock()
-		defer store.mu.Unlock()
-
-		if err != nil {
-			job.Status = "failed"
-			job.Error = err.Error()
-		} else {
-			job.Status = "completed"
-			job.Result = result
-		}
-	}()
+	go a.runScan(id, req, "quick scan")
 
 	response.OK(w, map[string]any{
-		"job_id":  job.ID,
-		"status":  job.Status,
+		"job_id":  id,
+		"status":  status,
 		"message": "quick scan started",
 	})
 }
 
-func handleRead(w http.ResponseWriter, r *http.Request) {
+// runScan executes a scan and records the outcome. Failure detail goes to the
+// log; the job carries only a generic message back to the caller.
+func (a *api) runScan(jobID string, req modbus.ScanRequest, label string) {
+	slog.Info(label+" started", "job_id", jobID, "mode", req.Mode, "host", req.Host, "serial", req.SerialPort)
+	result, err := modbus.Scan(req)
+
+	if err != nil {
+		a.store.finish(jobID, "failed", msgScanFailed, nil)
+		slog.Error(label+" failed", "job_id", jobID, "error", err)
+		return
+	}
+
+	a.store.finish(jobID, "completed", "", result)
+	slog.Info(label+" completed", "job_id", jobID,
+		"responsive", result.Summary.Responsive,
+		"dynamic", result.Summary.Dynamic,
+		"duration_ms", result.DurationMs,
+	)
+}
+
+func (a *api) handleRead(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Mode       string `json:"mode"`
 		Host       string `json:"host"`
@@ -221,6 +295,9 @@ func handleRead(w http.ResponseWriter, r *http.Request) {
 		response.Err(w, http.StatusBadRequest, "host is required for TCP mode")
 		return
 	}
+	if !a.checkTarget(w, r, &scanReq) {
+		return
+	}
 
 	if req.Type == "" {
 		req.Type = "holding"
@@ -234,14 +311,16 @@ func handleRead(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := modbus.NewClient(scanReq)
 	if err != nil {
-		response.Err(w, http.StatusBadGateway, "connect failed: "+err.Error())
+		slog.Warn("read connect failed", "mode", scanReq.Mode, "host", scanReq.Host, "error", err)
+		response.Err(w, http.StatusBadGateway, msgConnectFailed)
 		return
 	}
 	defer conn.Close()
 
 	data, err := modbus.ReadBatch(conn.Client, req.Type, req.Address, req.Count)
 	if err != nil {
-		response.Err(w, http.StatusBadGateway, "read failed: "+err.Error())
+		slog.Warn("read failed", "mode", scanReq.Mode, "host", scanReq.Host, "error", err)
+		response.Err(w, http.StatusBadGateway, msgReadFailed)
 		return
 	}
 
@@ -256,7 +335,7 @@ func handleRead(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func handleListSerialPorts(w http.ResponseWriter, r *http.Request) {
+func (a *api) handleListSerialPorts(w http.ResponseWriter, r *http.Request) {
 	ports := modbus.ListSerialPorts()
 	response.OK(w, map[string]any{"ports": ports})
 }
@@ -268,8 +347,8 @@ func deviceLabel(req modbus.ScanRequest) string {
 	return fmt.Sprintf("%s:%d", req.Host, req.Port)
 }
 
-func handleListJobs(w http.ResponseWriter, r *http.Request) {
-	jobs := store.list()
+func (a *api) handleListJobs(w http.ResponseWriter, r *http.Request) {
+	jobs := a.store.list()
 	summaries := make([]map[string]any, len(jobs))
 	for i, j := range jobs {
 		s := map[string]any{
@@ -290,10 +369,10 @@ func handleListJobs(w http.ResponseWriter, r *http.Request) {
 	response.OK(w, summaries)
 }
 
-func handleGetJob(w http.ResponseWriter, r *http.Request) {
+func (a *api) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	job := store.get(id)
-	if job == nil {
+	job, ok := a.store.get(id)
+	if !ok {
 		response.Err(w, http.StatusNotFound, "job not found")
 		return
 	}

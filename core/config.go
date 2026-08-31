@@ -9,10 +9,38 @@ import (
 
 // Config is the top-level gateway configuration.
 type Config struct {
-	Gateway     GatewayConfig            `yaml:"gateway"`
-	Coordinator CoordinatorConfig        `yaml:"coordinator"`
-	Uplink      UplinkConfig             `yaml:"uplink"`
-	Plugins     map[string]PluginConfig  `yaml:"plugins"`
+	Gateway     GatewayConfig           `yaml:"gateway"`
+	API         APIConfig               `yaml:"api"`
+	Scan        ScanConfig              `yaml:"scan"`
+	Coordinator CoordinatorConfig       `yaml:"coordinator"`
+	Uplink      UplinkConfig            `yaml:"uplink"`
+	Plugins     map[string]PluginConfig `yaml:"plugins"`
+}
+
+// APIConfig holds HTTP listener and authentication settings.
+//
+// Defaults are deliberately restrictive. The server binds to loopback and the
+// /api routes stay closed until an API token is supplied through the
+// environment; exposing the API on another interface has to be explicit.
+type APIConfig struct {
+	// Listen is the bind address for the HTTP server. Empty means loopback.
+	// Overridden by the --listen flag or EDGE_GATEWAY_LISTEN.
+	Listen string `yaml:"listen"`
+
+	// TokenEnv names the environment variable holding the API token.
+	// Empty means EDGE_GATEWAY_API_TOKEN.
+	TokenEnv string `yaml:"token_env"`
+
+	// AllowedOrigins lists browser origins permitted to call /api in addition
+	// to same-origin requests. Empty means same-origin only.
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
+// ScanConfig constrains what the on-demand scan API is allowed to reach.
+type ScanConfig struct {
+	// AllowedTargets is a CIDR allow list for TCP scan targets. Empty falls
+	// back to loopback plus the RFC1918 private ranges.
+	AllowedTargets []string `yaml:"allowed_targets"`
 }
 
 // CoordinatorConfig defines cloud coordinator connection settings.
@@ -36,7 +64,7 @@ type UplinkConfig struct {
 	MQTT          MQTTUplink `yaml:"mqtt"`
 	File          FileUplink `yaml:"file"`
 	BatchInterval string     `yaml:"batch_interval"` // for coordinator type, e.g. "5s"
-	MaxBatchSize  int        `yaml:"max_batch_size"`  // for coordinator type
+	MaxBatchSize  int        `yaml:"max_batch_size"` // for coordinator type
 }
 
 // MQTTUplink configures the MQTT uplink target.
@@ -102,6 +130,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if cfg.Uplink.Type == "" {
 		cfg.Uplink.Type = "stdout"
+	}
+	if cfg.API.Listen == "" {
+		cfg.API.Listen = DefaultListenHost
+	}
+	if cfg.API.TokenEnv == "" {
+		cfg.API.TokenEnv = DefaultTokenEnv
 	}
 
 	return &cfg, nil

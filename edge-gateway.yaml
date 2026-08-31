@@ -3,6 +3,21 @@ gateway:
   log_level: info
   health_port: 8080
 
+# HTTP API. Defaults bind loopback only. /api requires a bearer token read from
+# the environment variable named below, and refuses every request while unset.
+api:
+  listen: "127.0.0.1"
+  token_env: "EDGE_GATEWAY_API_TOKEN"
+  # Browser origins allowed besides same-origin. Empty means same-origin only.
+  allowed_origins: []
+
+# Scan API target allow list. Narrow this to the subnets holding your devices.
+# Link-local (169.254.0.0/16) is refused whatever is listed here.
+scan:
+  allowed_targets:
+    - "127.0.0.0/8"
+    - "192.168.0.0/16"
+
 coordinator:
   url: "https://dashai-go.onrender.com"
   node_id: "edge-gw-factory-a-01"
