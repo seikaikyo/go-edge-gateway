@@ -8,3 +8,11 @@ services:
     envVars:
       - key: TZ
         value: Asia/Taipei
+      # The platform routes to the container, so the API has to bind 0.0.0.0.
+      # That is only safe together with the token below and the loopback-only
+      # scan allow list in edge-gateway.demo.yaml.
+      - key: EDGE_GATEWAY_LISTEN
+        value: 0.0.0.0
+      # Without this the /api routes refuse every request.
+      - key: EDGE_GATEWAY_API_TOKEN
+        generateValue: true

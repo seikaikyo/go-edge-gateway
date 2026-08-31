@@ -3,6 +3,18 @@ gateway:
   log_level: info
   health_port: 8080
 
+# Hosted demo. The container binds 0.0.0.0 through EDGE_GATEWAY_LISTEN (see
+# render.yaml) because the platform routes to it, so /api is protected by the
+# token and the scan allow list is loopback only: the public demo cannot reach
+# the platform's internal network.
+api:
+  token_env: "EDGE_GATEWAY_API_TOKEN"
+  allowed_origins: []
+
+scan:
+  allowed_targets:
+    - "127.0.0.0/8"
+
 coordinator:
   url: "https://dashai-go.onrender.com"
   node_id: "edge-gw-demo-01"

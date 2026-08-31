@@ -21,6 +21,7 @@ var version = "dev"
 
 func main() {
 	cfgPath := flag.String("config", "edge-gateway.yaml", "path to config file")
+	listen := flag.String("listen", "", "bind address for the HTTP API (default 127.0.0.1; set explicitly to expose the scan API on the network)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -62,7 +63,11 @@ func main() {
 	}
 
 	// Start API server (health + scan API + embedded UI).
-	api := core.NewAPIServer(gw, cfg.Gateway.HealthPort, logger)
+	api, err := core.NewAPIServer(gw, core.ListenHost(cfg, *listen), cfg.Gateway.HealthPort, logger)
+	if err != nil {
+		logger.Error("api server init failed", "error", err)
+		os.Exit(1)
+	}
 	go func() {
 		if err := api.ListenAndServe(); err != nil {
 			logger.Debug("api server stopped", "error", err)

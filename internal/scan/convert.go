@@ -2,6 +2,7 @@ package scan
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -30,10 +31,10 @@ type PluginRegister struct {
 	Unit    string  `yaml:"unit,omitempty" json:"unit,omitempty"`
 }
 
-func handleToConfig(w http.ResponseWriter, r *http.Request) {
+func (a *api) handleToConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	job := store.get(id)
-	if job == nil {
+	job, ok := a.store.get(id)
+	if !ok {
 		response.Err(w, http.StatusNotFound, "job not found")
 		return
 	}
@@ -50,7 +51,8 @@ func handleToConfig(w http.ResponseWriter, r *http.Request) {
 
 	yamlBytes, err := yaml.Marshal(cfg)
 	if err != nil {
-		response.Err(w, http.StatusInternalServerError, "yaml marshal failed: "+err.Error())
+		slog.Error("config yaml marshal failed", "job_id", id, "error", err)
+		response.Err(w, http.StatusInternalServerError, "config generation failed")
 		return
 	}
 

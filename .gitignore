@@ -1,4 +1,4 @@
-edge-gateway
+/edge-gateway
 *.exe
 node_modules/
 .claude/
