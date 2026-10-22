@@ -1,7 +1,8 @@
 module github.com/seikaikyo/go-edge-gateway
 
 go 1.26.1
-toolchain go1.26.7
+
+toolchain go1.26.10
 
 require (
 	github.com/dashfactory/go-factory-io v1.0.0
@@ -15,8 +16,8 @@ require (
 require (
 	github.com/goburrow/serial v0.1.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 )
 
 replace github.com/dashfactory/go-factory-io => ../go-factory-io
