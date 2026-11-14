@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -110,57 +111,85 @@ func (p *Plugin) runDevice(ctx context.Context, dev DeviceDef) {
 		default:
 		}
 
-		host := simulator.NewHost(addr, sessionID, logger)
-		host.SetInterceptor(p.makeInterceptor(dev.Name))
-
-		p.mu.Lock()
-		p.hosts = append(p.hosts, host)
-		p.mu.Unlock()
-
-		logger.Info("connecting to equipment")
-		if err := host.Connect(ctx); err != nil {
-			logger.Error("connect failed", "error", err)
-			p.setError(err.Error())
-			host.Close()
-			// Wait before retry (T5 equivalent).
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(10 * time.Second):
-				continue
-			}
+		if !p.runConnection(ctx, addr, sessionID, dev.Name, logger) {
+			return
 		}
 
-		p.addConn()
-		logger.Info("connected, establishing communication")
-
-		// S1F13 Establish Communication.
-		if _, err := host.EstablishComm(ctx); err != nil {
-			logger.Error("establish comm failed", "error", err)
-			p.setError(err.Error())
-		} else {
-			p.setOK()
-			logger.Info("communication established")
-		}
-
-		// Block until context is cancelled — the interceptor handles incoming messages.
+		// Wait before reconnecting (T5 equivalent).
 		select {
 		case <-ctx.Done():
-			host.Close()
-			p.removeConn()
 			return
-		case <-host.Session().Done():
-			logger.Warn("session disconnected, will reconnect")
-			p.removeConn()
-			p.setError("disconnected")
-			host.Close()
-			// Reconnect after T5.
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(10 * time.Second):
-			}
+		case <-time.After(10 * time.Second):
 		}
+	}
+}
+
+// runConnection connects to one device once and serves the session until it
+// ends. It returns false when ctx is cancelled and true when the caller
+// should reconnect.
+//
+// A panic while handling this device (decoding or forwarding a reply) is
+// recovered here and closes only this device's connection, so one device's
+// bad reply cannot stop the other devices, the other plugins or the HTTP API.
+func (p *Plugin) runConnection(ctx context.Context, addr string, sessionID uint16, name string, logger *slog.Logger) (reconnect bool) {
+	host := simulator.NewHost(addr, sessionID, logger)
+	host.SetInterceptor(p.makeInterceptor(name))
+
+	p.mu.Lock()
+	p.hosts = append(p.hosts, host)
+	p.mu.Unlock()
+
+	connected := false
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("device handling panicked, closing connection",
+				"panic", r, "stack", string(debug.Stack()))
+			p.setError(fmt.Sprintf("panic: %v", r))
+			host.Close()
+			if connected {
+				p.removeConn()
+			}
+			reconnect = ctx.Err() == nil
+		}
+	}()
+
+	logger.Info("connecting to equipment")
+	if err := host.Connect(ctx); err != nil {
+		logger.Error("connect failed", "error", err)
+		p.setError(err.Error())
+		host.Close()
+		return ctx.Err() == nil
+	}
+
+	connected = true
+	p.addConn()
+	logger.Info("connected, establishing communication")
+
+	// S1F13 Establish Communication. A reply that fails to arrive or to
+	// decode leaves the device unusable, so drop the connection and retry.
+	if _, err := host.EstablishComm(ctx); err != nil {
+		logger.Error("establish comm failed, closing connection", "error", err)
+		p.setError(err.Error())
+		host.Close()
+		p.removeConn()
+		return ctx.Err() == nil
+	}
+	p.setOK()
+	logger.Info("communication established")
+
+	// Block until context is cancelled or the session ends; the interceptor
+	// handles incoming messages.
+	select {
+	case <-ctx.Done():
+		host.Close()
+		p.removeConn()
+		return false
+	case <-host.Session().Done():
+		logger.Warn("session disconnected, will reconnect")
+		p.removeConn()
+		p.setError("disconnected")
+		host.Close()
+		return true
 	}
 }
 
