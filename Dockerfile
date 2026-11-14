@@ -4,13 +4,16 @@
 # but the repo lives at github.com/seikaikyo/go-factory-io.
 # We use git insteadOf to redirect the module fetch, and strip
 # the local replace directive so Go fetches from GitHub.
+# GOPRIVATE makes the go command fetch this module with git directly
+# instead of through the public module proxy and checksum database;
+# without it insteadOf never applies.
 
 FROM golang:1.26-alpine AS builder
 
 RUN apk --no-cache add git
 RUN git config --global url."https://github.com/seikaikyo/go-factory-io".insteadOf "https://github.com/dashfactory/go-factory-io"
 
-ENV GONOSUMCHECK=github.com/dashfactory/go-factory-io
+ENV GOPRIVATE=github.com/dashfactory/go-factory-io
 ENV GOFLAGS=-mod=mod
 
 WORKDIR /src
