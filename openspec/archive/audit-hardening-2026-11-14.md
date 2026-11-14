@@ -1,7 +1,7 @@
 # 單一設備的壞回覆只影響該設備的連線
 
 - **type**: fix
-- **status**: in progress
+- **status**: completed
 - **建立日期**: 2026-11-14
 
 ## 背景
