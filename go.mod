@@ -5,7 +5,7 @@ go 1.26.1
 toolchain go1.26.10
 
 require (
-	github.com/dashfactory/go-factory-io v1.0.0
+	github.com/dashfactory/go-factory-io v1.1.1
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/go-chi/chi/v5 v5.4.0
 	github.com/goburrow/modbus v0.1.0
